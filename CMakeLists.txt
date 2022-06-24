@@ -62,7 +62,7 @@ option(WASMEDGE_BUILD_COVERAGE "Generate coverage report. Require WASMEDGE_BUILD
 option(WASMEDGE_BUILD_AOT_RUNTIME "Enable WasmEdge LLVM-based ahead of time compilation runtime." ON)
 option(WASMEDGE_BUILD_SHARED_LIB "Generate the WasmEdge shared library." ON)
 option(WASMEDGE_BUILD_STATIC_LIB "Generate the WasmEdge static library." OFF)
-option(WASMEDGE_BUILD_TOOLS "Generate wasmedge and wasmedgec tools." ON)
+option(WASMEDGE_BUILD_TOOLS "Generate wasmedge and wasmedgec tools. Dependence on WasmEdge shared library" ON)
 option(WASMEDGE_BUILD_PLUGINS "Generate plugins." ON)
 option(WASMEDGE_BUILD_EXAMPLE "Generate examples." OFF)
 option(WASMEDGE_FORCE_DISABLE_LTO "Forcibly disable link time optimization when linking even in Release/RelWithDeb build." OFF)

@@ -61,6 +61,7 @@ wasmedge_add_library(wasmedgeCAPI OBJECT
 target_link_libraries(wasmedgeCAPI
   PUBLIC
   wasmedgeVM
+  wasmedgeDriver
 )
 
 if (WASMEDGE_BUILD_AOT_RUNTIME)
