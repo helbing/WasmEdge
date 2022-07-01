@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2019-2022 Second State INC
 
+#include "common/types.h"
 #include "processfunc.h"
 #include "processmodule.h"
+#include "runtime/instance/module.h"
 
 #include <algorithm>
 #include <array>
@@ -12,69 +14,128 @@
 #include <vector>
 
 namespace {
+WasmEdge::Runtime::Instance::ModuleInstance *createModule() {
+  using namespace std::literals::string_view_literals;
+  if (const auto *Plugin =
+          WasmEdge::Plugin::Plugin::find("wasmedge_process"sv)) {
+    if (const auto *Module = Plugin->findModule("wasmedge_process"sv)) {
+      return Module->create().release();
+    }
+  }
+  return nullptr;
+}
+
 void fillMemContent(WasmEdge::Runtime::Instance::MemoryInstance &MemInst,
                     uint32_t Offset, uint32_t Cnt, uint8_t C = 0) noexcept {
   std::fill_n(MemInst.getPointer<uint8_t *>(Offset), Cnt, C);
 }
+
+void fillMemContent(WasmEdge::Runtime::Instance::MemoryInstance &MemInst,
+                    uint32_t Offset, const std::string &Str) noexcept {
+  char *Buf = MemInst.getPointer<char *>(Offset);
+  std::copy_n(Str.c_str(), Str.length(), Buf);
+}
 } // namespace
 
 TEST(WasmEdgeProcessTest, SetProgName) {
-  WasmEdge::Host::WasmEdgeProcessEnvironment Env;
+  // Create the wasmedge_process module instance.
+  auto *ProcMod =
+      dynamic_cast<WasmEdge::Host::WasmEdgeProcessModule *>(createModule());
+  EXPECT_FALSE(ProcMod == nullptr);
+
+  // Create the memory instance.
   WasmEdge::Runtime::Instance::MemoryInstance MemInst(
       WasmEdge::AST::MemoryType(1));
-  WasmEdge::Host::WasmEdgeProcessSetProgName WasmEdgeProcessSetProgName(Env);
-  fillMemContent(MemInst, 0, 64);
-  char *Buf = MemInst.getPointer<char *>(0);
-  std::copy_n(std::string("echo").c_str(), 4, Buf);
 
-  EXPECT_TRUE(WasmEdgeProcessSetProgName.run(
+  // Clear the memory[0, 64].
+  fillMemContent(MemInst, 0, 64);
+  // Set the memory[0, 4] as string "echo".
+  fillMemContent(MemInst, 0, std::string("echo"));
+
+  // Get the function "wasmedge_process_set_prog_name".
+  auto *FuncInst = ProcMod->findFuncExports("wasmedge_process_set_prog_name");
+  EXPECT_NE(FuncInst, nullptr);
+  EXPECT_TRUE(FuncInst->isHostFunction());
+  auto &HostFuncInst =
+      dynamic_cast<WasmEdge::Host::WasmEdgeProcessSetProgName &>(
+          FuncInst->getHostFunc());
+
+  // Test: Run function successfully.
+  EXPECT_TRUE(HostFuncInst.run(
       &MemInst,
       std::initializer_list<WasmEdge::ValVariant>{UINT32_C(0), UINT32_C(4)},
       {}));
-  EXPECT_EQ(Env.Name, "echo");
-  EXPECT_FALSE(WasmEdgeProcessSetProgName.run(
+  EXPECT_EQ(ProcMod->getEnv().Name, "echo");
+
+  // Test: Run function with nullptr memory instance -- fail
+  EXPECT_FALSE(HostFuncInst.run(
       nullptr,
       std::initializer_list<WasmEdge::ValVariant>{UINT32_C(0), UINT32_C(4)},
       {}));
+
+  delete ProcMod;
 }
 
 TEST(WasmEdgeProcessTest, AddArg) {
-  WasmEdge::Host::WasmEdgeProcessEnvironment Env;
+  // Create the wasmedge_process module instance.
+  auto *ProcMod =
+      dynamic_cast<WasmEdge::Host::WasmEdgeProcessModule *>(createModule());
+  EXPECT_FALSE(ProcMod == nullptr);
+
+  // Create the memory instance.
   WasmEdge::Runtime::Instance::MemoryInstance MemInst(
       WasmEdge::AST::MemoryType(1));
-  WasmEdge::Host::WasmEdgeProcessAddArg WasmEdgeProcessAddArg(Env);
-  fillMemContent(MemInst, 0, 64);
-  char *Arg1 = MemInst.getPointer<char *>(0);
-  std::copy_n(std::string("arg1").c_str(), 4, Arg1);
-  char *Arg2 = MemInst.getPointer<char *>(4);
-  std::copy_n(std::string("arg2").c_str(), 4, Arg2);
-  char *Arg3 = MemInst.getPointer<char *>(30);
-  std::copy_n(std::string("--final-arg").c_str(), 11, Arg3);
 
-  EXPECT_TRUE(WasmEdgeProcessAddArg.run(
+  // Clear the memory[0, 64].
+  fillMemContent(MemInst, 0, 64);
+  // Set the memory[0, 4] as string "echo".
+  fillMemContent(MemInst, 0, std::string("arg1"));
+  // Set the memory[4, 8] as string "arg2".
+  fillMemContent(MemInst, 4, std::string("arg2"));
+  // Set the memory[30, 41] as string "--final-arg".
+  fillMemContent(MemInst, 30, std::string("--final-arg"));
+
+  // Get the function "wasmedge_process_add_arg".
+  auto *FuncInst = ProcMod->findFuncExports("wasmedge_process_add_arg");
+  EXPECT_NE(FuncInst, nullptr);
+  EXPECT_TRUE(FuncInst->isHostFunction());
+  auto &HostFuncInst = dynamic_cast<WasmEdge::Host::WasmEdgeProcessAddArg &>(
+      FuncInst->getHostFunc());
+
+  // Test: Run function successfully to add "arg1".
+  EXPECT_TRUE(HostFuncInst.run(
       &MemInst,
       std::initializer_list<WasmEdge::ValVariant>{UINT32_C(0), UINT32_C(4)},
       {}));
-  EXPECT_EQ(Env.Args.size(), 1U);
-  EXPECT_EQ(Env.Args[0], "arg1");
-  EXPECT_TRUE(WasmEdgeProcessAddArg.run(
+  EXPECT_EQ(ProcMod->getEnv().Args.size(), 1U);
+  EXPECT_EQ(ProcMod->getEnv().Args[0], "arg1");
+
+  // Test: Run function successfully to add "arg2".
+  EXPECT_TRUE(HostFuncInst.run(
       &MemInst,
       std::initializer_list<WasmEdge::ValVariant>{UINT32_C(4), UINT32_C(4)},
       {}));
-  EXPECT_EQ(Env.Args.size(), 2U);
-  EXPECT_EQ(Env.Args[1], "arg2");
-  EXPECT_TRUE(WasmEdgeProcessAddArg.run(
+  EXPECT_EQ(ProcMod->getEnv().Args.size(), 2U);
+  EXPECT_EQ(ProcMod->getEnv().Args[1], "arg2");
+
+  // Test: Run function successfully to add "--final-arg".
+  EXPECT_TRUE(HostFuncInst.run(
       &MemInst,
       std::initializer_list<WasmEdge::ValVariant>{UINT32_C(30), UINT32_C(11)},
       {}));
-  EXPECT_EQ(Env.Args.size(), 3U);
-  EXPECT_EQ(Env.Args[2], "--final-arg");
-  EXPECT_FALSE(WasmEdgeProcessAddArg.run(
+  EXPECT_EQ(ProcMod->getEnv().Args.size(), 3U);
+  EXPECT_EQ(ProcMod->getEnv().Args[2], "--final-arg");
+
+  // Test: Run function with nullptr memory instance -- fail
+  EXPECT_FALSE(HostFuncInst.run(
       nullptr,
       std::initializer_list<WasmEdge::ValVariant>{UINT32_C(0), UINT32_C(4)},
       {}));
+
+  delete ProcMod;
 }
 
+/*
 TEST(WasmEdgeProcessTest, AddEnv) {
   WasmEdge::Host::WasmEdgeProcessEnvironment Env;
   WasmEdge::Runtime::Instance::MemoryInstance MemInst(
@@ -275,6 +336,7 @@ TEST(WasmEdgeProcessTest, Module) {
   EXPECT_NE(Mod.findFuncExports("wasmedge_process_get_stderr_len"), nullptr);
   EXPECT_NE(Mod.findFuncExports("wasmedge_process_get_stderr"), nullptr);
 }
+*/
 
 GTEST_API_ int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
